@@ -19,83 +19,191 @@
 
 package org.elasticsearch.test.rest;
 
+import org.elasticsearch.action.ActionListener;
+import org.elasticsearch.common.bytes.BytesArray;
 import org.elasticsearch.common.bytes.BytesReference;
+import org.elasticsearch.common.xcontent.NamedXContentRegistry;
+import org.elasticsearch.common.xcontent.XContentType;
+import org.elasticsearch.http.HttpChannel;
+import org.elasticsearch.http.HttpRequest;
+import org.elasticsearch.http.HttpResponse;
 import org.elasticsearch.rest.RestRequest;
+import org.elasticsearch.rest.RestStatus;
 
+import java.net.InetSocketAddress;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 public class FakeRestRequest extends RestRequest {
 
-    private final Map<String, String> headers;
-
-    private final Map<String, String> params;
-
     public FakeRestRequest() {
-        this(new HashMap<>());
+        this(NamedXContentRegistry.EMPTY, new FakeHttpRequest(Method.GET, "", BytesArray.EMPTY, new HashMap<>()), new HashMap<>(),
+            new FakeHttpChannel(null));
     }
 
-    public FakeRestRequest(Map<String, String> headers) {
-        this.headers = headers;
-        this.params = new HashMap<>();
-    }
-
-    @Override
-    public Method method() {
-        return Method.GET;
-    }
-
-    @Override
-    public String uri() {
-        return "/";
-    }
-
-    @Override
-    public String rawPath() {
-        return "/";
+    private FakeRestRequest(NamedXContentRegistry xContentRegistry, HttpRequest httpRequest, Map<String, String> params,
+                            HttpChannel httpChannel) {
+        super(xContentRegistry, params, httpRequest.uri(), httpRequest.getHeaders(), httpRequest, httpChannel);
     }
 
     @Override
     public boolean hasContent() {
-        return false;
+        return content() != null;
     }
 
-    @Override
-    public BytesReference content() {
-        return null;
-    }
+    private static class FakeHttpRequest implements HttpRequest {
 
-    @Override
-    public String header(String name) {
-        return headers.get(name);
-    }
+        private final Method method;
+        private final String uri;
+        private final BytesReference content;
+        private final Map<String, List<String>> headers;
 
-    @Override
-    public Iterable<Map.Entry<String, String>> headers() {
-        return headers.entrySet();
-    }
-
-    @Override
-    public boolean hasParam(String key) {
-        return params.containsKey(key);
-    }
-
-    @Override
-    public String param(String key) {
-        return params.get(key);
-    }
-
-    @Override
-    public String param(String key, String defaultValue) {
-        String value = params.get(key);
-        if (value == null) {
-            return defaultValue;
+        private FakeHttpRequest(Method method, String uri, BytesReference content, Map<String, List<String>> headers) {
+            this.method = method;
+            this.uri = uri;
+            this.content = content;
+            this.headers = headers;
         }
-        return value;
+
+        @Override
+        public Method method() {
+            return method;
+        }
+
+        @Override
+        public String uri() {
+            return uri;
+        }
+
+        @Override
+        public BytesReference content() {
+            return content;
+        }
+
+        @Override
+        public Map<String, List<String>> getHeaders() {
+            return headers;
+        }
+
+        @Override
+        public List<String> strictCookies() {
+            return Collections.emptyList();
+        }
+
+        @Override
+        public HttpVersion protocolVersion() {
+            return HttpVersion.HTTP_1_1;
+        }
+
+        @Override
+        public HttpRequest removeHeader(String header) {
+            headers.remove(header);
+            return this;
+        }
+
+        @Override
+        public HttpResponse createResponse(RestStatus status, BytesReference content) {
+            Map<String, String> headers = new HashMap<>();
+            return new HttpResponse() {
+                @Override
+                public void addHeader(String name, String value) {
+                    headers.put(name, value);
+                }
+
+                @Override
+                public boolean containsHeader(String name) {
+                    return headers.containsKey(name);
+                }
+            };
+        }
     }
 
-    @Override
-    public Map<String, String> params() {
-        return params;
+    private static class FakeHttpChannel implements HttpChannel {
+
+        private final InetSocketAddress remoteAddress;
+
+        private FakeHttpChannel(InetSocketAddress remoteAddress) {
+            this.remoteAddress = remoteAddress;
+        }
+
+        @Override
+        public void sendResponse(HttpResponse response, ActionListener<Void> listener) {
+
+        }
+
+        @Override
+        public InetSocketAddress getLocalAddress() {
+            return null;
+        }
+
+        @Override
+        public InetSocketAddress getRemoteAddress() {
+            return remoteAddress;
+        }
+
+        @Override
+        public void close() {
+
+        }
+    }
+
+    public static class Builder {
+        private final NamedXContentRegistry xContentRegistry;
+
+        private Map<String, List<String>> headers = new HashMap<>();
+
+        private Map<String, String> params = new HashMap<>();
+
+        private BytesReference content;
+
+        private String path = "/";
+
+        private Method method = Method.GET;
+
+        private InetSocketAddress address = null;
+
+        public Builder(NamedXContentRegistry xContentRegistry) {
+            this.xContentRegistry = xContentRegistry;
+        }
+
+        public Builder withHeaders(Map<String, List<String>> headers) {
+            this.headers = headers;
+            return this;
+        }
+
+        public Builder withParams(Map<String, String> params) {
+            this.params = params;
+            return this;
+        }
+
+        public Builder withContent(BytesReference content, XContentType xContentType) {
+            this.content = content;
+            if (xContentType != null) {
+                headers.put("Content-Type", Collections.singletonList(xContentType.mediaType()));
+            }
+            return this;
+        }
+
+        public Builder withPath(String path) {
+            this.path = path;
+            return this;
+        }
+
+        public Builder withMethod(Method method) {
+            this.method = method;
+            return this;
+        }
+
+        public Builder withRemoteAddress(InetSocketAddress address) {
+            this.address = address;
+            return this;
+        }
+
+        public FakeRestRequest build() {
+            FakeHttpRequest fakeHttpRequest = new FakeHttpRequest(method, path, content, headers);
+            return new FakeRestRequest(xContentRegistry, fakeHttpRequest, params, new FakeHttpChannel(address));
+        }
     }
 }

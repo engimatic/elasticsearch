@@ -24,6 +24,7 @@ import org.elasticsearch.script.ExecutableScript;
 import java.util.Map;
 import java.util.function.Consumer;
 
+
 public class SimpleExecutableScript implements ExecutableScript {
     private final Consumer<Map<String, Object>> script;
     private Map<String, Object> ctx;
@@ -46,10 +47,5 @@ public class SimpleExecutableScript implements ExecutableScript {
         } else {
             throw new IllegalArgumentException("Unsupported var [" + name + "]");
         }
-    }
-
-    @Override
-    public Object unwrap(Object value) {
-        return value;
     }
 }
